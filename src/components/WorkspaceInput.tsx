@@ -1,7 +1,8 @@
 'use client';
 import React, { useState, useCallback, useRef } from 'react';
-import { Play, Upload, Mail, Calendar, Mic } from 'lucide-react';
+import { Play, Upload, Mail, MessageSquare, Mic } from 'lucide-react';
 import SentimentIndicator from './SentimentIndicator';
+import { SentimentContext } from '@/utils/geminiPrompt';
 
 interface SentimentData {
   score: number;
@@ -11,7 +12,7 @@ interface SentimentData {
 }
 
 interface Props {
-  onAnalyze: (inputs: { meeting: string; chat: string; email: string }, sentimentContext?: any) => void;
+  onAnalyze: (inputs: { meeting: string; chat: string; email: string }, sentimentContext?: SentimentContext) => void;
   isLoading: boolean;
 }
 
@@ -65,7 +66,7 @@ export default function WorkspaceInput({ onAnalyze, isLoading }: Props) {
   };
 
   const handleRun = () => {
-    const sentimentContext: any = {};
+    const sentimentContext: SentimentContext = {};
     if (sentiments.meeting) sentimentContext.meeting = { score: sentiments.meeting.score, label: sentiments.meeting.label };
     if (sentiments.chat) sentimentContext.chat = { score: sentiments.chat.score, label: sentiments.chat.label };
     if (sentiments.email) sentimentContext.email = { score: sentiments.email.score, label: sentiments.email.label };
@@ -100,17 +101,33 @@ export default function WorkspaceInput({ onAnalyze, isLoading }: Props) {
 
   const tabs = [
     { id: 'meeting' as const, label: 'Meeting Transcript', icon: Mic },
-    { id: 'chat' as const, label: 'Chat Thread', icon: Calendar },
+    { id: 'chat' as const, label: 'Chat Thread', icon: MessageSquare },
     { id: 'email' as const, label: 'Email Update', icon: Mail },
   ];
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="flex border-b border-slate-200 bg-slate-50">
-        {tabs.map(tab => (
+      <div role="tablist" aria-label="Communication input sources" className="flex border-b border-slate-200 bg-slate-50">
+        {tabs.map((tab, index) => (
           <button
             key={tab.id}
+            id={`tab-${tab.id}`}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`tabpanel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
             onClick={() => setActiveTab(tab.id)}
+            onKeyDown={(e) => {
+              let newIndex = index;
+              if (e.key === 'ArrowRight') newIndex = (index + 1) % tabs.length;
+              else if (e.key === 'ArrowLeft') newIndex = (index - 1 + tabs.length) % tabs.length;
+              else if (e.key === 'Home') newIndex = 0;
+              else if (e.key === 'End') newIndex = tabs.length - 1;
+              else return;
+              e.preventDefault();
+              setActiveTab(tabs[newIndex].id);
+              document.getElementById(`tab-${tabs[newIndex].id}`)?.focus();
+            }}
             className={`flex-1 py-3 px-4 text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
               activeTab === tab.id
                 ? 'border-b-2 border-emerald-500 text-emerald-700 bg-white'
@@ -125,7 +142,7 @@ export default function WorkspaceInput({ onAnalyze, isLoading }: Props) {
           </button>
         ))}
       </div>
-      <div className="p-4">
+      <div role="tabpanel" id={`tabpanel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} className="p-4">
         <label htmlFor={`${activeTab}-input`} className="sr-only">
           {tabs.find(t => t.id === activeTab)?.label}
         </label>
@@ -166,11 +183,13 @@ export default function WorkspaceInput({ onAnalyze, isLoading }: Props) {
 
         <div className="mt-4 flex justify-end">
           <button
+            id="run-analysis-button"
             onClick={handleRun}
             disabled={isLoading}
+            aria-busy={isLoading}
             className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
           >
-            <Play className="w-4 h-4" />
+            <Play className="w-4 h-4" aria-hidden="true" />
             <span>{isLoading ? 'Analyzing...' : 'Run Invisible PM Analysis'}</span>
           </button>
         </div>

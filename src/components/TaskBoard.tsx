@@ -119,17 +119,21 @@ export default function TaskBoard({ tasks, availableOwners = [], onTaskUpdate }:
                         <span>Assign</span>
                         <ChevronDown className="w-3 h-3" />
                       </button>
-                      {assigningIndex === i && availableOwners.length > 0 && (
+                      {assigningIndex === i && (
                         <div className="absolute top-full left-0 mt-1 z-10 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[140px]">
-                          {availableOwners.map(owner => (
-                            <button
-                              key={owner}
-                              onClick={() => handleAssign(i, owner)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                            >
-                              {owner}
-                            </button>
-                          ))}
+                          {availableOwners.length > 0 ? (
+                            availableOwners.map(owner => (
+                              <button
+                                key={owner}
+                                onClick={() => handleAssign(i, owner)}
+                                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
+                              >
+                                {owner}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-xs text-slate-400 italic">No owners identified</p>
+                          )}
                         </div>
                       )}
                     </div>

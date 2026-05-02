@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { HeartPulse, AlertTriangle } from 'lucide-react';
 import HealthTrendChart from './HealthTrendChart';
 
@@ -9,7 +9,8 @@ interface Props {
   healthHistory?: { date: string; score: number }[];
 }
 
-export default function TeamPulseCard({ score, risk, summary, healthHistory }: Props) {
+/** Displays team health score, risk level, and optional trend chart */
+const TeamPulseCard = memo(function TeamPulseCard({ score, risk, summary, healthHistory }: Props) {
   if (score === undefined && !summary) return null;
 
   const riskColor = 
@@ -22,7 +23,7 @@ export default function TeamPulseCard({ score, risk, summary, healthHistory }: P
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start md:items-center">
       <div className="flex items-center space-x-6">
         <div className="relative">
-          <svg className="w-24 h-24 transform -rotate-90">
+          <svg className="w-24 h-24 transform -rotate-90" role="img" aria-label={`Team health score: ${score} out of 100`}>
             <circle cx="48" cy="48" r="36" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
             <circle cx="48" cy="48" r="36" stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={36 * 2 * Math.PI} strokeDashoffset={36 * 2 * Math.PI - (score / 100) * 36 * 2 * Math.PI} className="text-indigo-500" />
           </svg>
@@ -50,4 +51,6 @@ export default function TeamPulseCard({ score, risk, summary, healthHistory }: P
       </div>
     </div>
   );
-}
+});
+
+export default TeamPulseCard;

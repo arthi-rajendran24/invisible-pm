@@ -1,18 +1,32 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import Header from '@/components/Header';
 import WorkspaceInput from '@/components/WorkspaceInput';
 import AgentTimeline from '@/components/AgentTimeline';
-import TeamPulseCard from '@/components/TeamPulseCard';
-import TaskBoard from '@/components/TaskBoard';
-import DependencyMap from '@/components/DependencyMap';
-import SmartNudges from '@/components/SmartNudges';
-import LeadershipBrief from '@/components/LeadershipBrief';
-import AnalysisHistory from '@/components/AnalysisHistory';
 import { AnalysisResult, AgentEvent, Task } from '@/types/analysis';
+import { SentimentContext } from '@/utils/geminiPrompt';
 import { Share2, Check } from 'lucide-react';
 import { auth, db, isConfigured } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
+
+// Lazy-loaded heavy components for code splitting
+const TeamPulseCard = lazy(() => import('@/components/TeamPulseCard'));
+const TaskBoard = lazy(() => import('@/components/TaskBoard'));
+const DependencyMap = lazy(() => import('@/components/DependencyMap'));
+const SmartNudges = lazy(() => import('@/components/SmartNudges'));
+const LeadershipBrief = lazy(() => import('@/components/LeadershipBrief'));
+const AnalysisHistory = lazy(() => import('@/components/AnalysisHistory'));
+
+/** Fallback skeleton shown while lazy components load */
+function CardSkeleton() {
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 animate-pulse" role="status" aria-label="Loading component">
+      <div className="h-4 bg-slate-200 rounded w-1/3 mb-4"></div>
+      <div className="h-3 bg-slate-100 rounded w-full mb-2"></div>
+      <div className="h-3 bg-slate-100 rounded w-2/3"></div>
+    </div>
+  );
+}
 
 interface HistoryEntry {
   id: string;
@@ -48,7 +62,7 @@ export default function Home() {
     }
   }, []);
 
-  const loadHistory = async (userId: string) => {
+  const loadHistory = useCallback(async (userId: string) => {
     if (!db) return;
     try {
       const { collection, getDocs, query, orderBy, limit } = await import('firebase/firestore');
@@ -62,17 +76,17 @@ export default function Home() {
       const healthData: { date: string; score: number }[] = [];
 
       snapshot.forEach((d) => {
-        const data = d.data();
+        const docData = d.data();
         entries.push({
           id: d.id,
-          timestamp: data.timestamp,
-          teamHealthScore: data.team_health_score || 0,
-          riskLevel: data.risk_level || 'unknown',
-          taskCount: data.implicit_tasks?.length || 0,
+          timestamp: docData.timestamp,
+          teamHealthScore: docData.team_health_score || 0,
+          riskLevel: docData.risk_level || 'unknown',
+          taskCount: docData.implicit_tasks?.length || 0,
         });
         healthData.push({
-          date: new Date(data.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          score: data.team_health_score || 0,
+          date: new Date(docData.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          score: docData.team_health_score || 0,
         });
       });
 
@@ -81,9 +95,9 @@ export default function Home() {
     } catch {
       // Firestore not available
     }
-  };
+  }, []);
 
-  const saveAnalysis = async (result: AnalysisResult) => {
+  const saveAnalysis = useCallback(async (result: AnalysisResult) => {
     if (!user || !db) return;
     try {
       const { collection, addDoc } = await import('firebase/firestore');
@@ -95,9 +109,9 @@ export default function Home() {
     } catch {
       // Silently fail
     }
-  };
+  }, [user, loadHistory]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     if (!data) return;
     try {
       if (db) {
@@ -112,7 +126,6 @@ export default function Home() {
         setShareUrl(url);
         navigator.clipboard.writeText(url);
       } else {
-        // Fallback: copy JSON
         navigator.clipboard.writeText(JSON.stringify(data, null, 2));
       }
       setShareCopied(true);
@@ -122,24 +135,31 @@ export default function Home() {
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 3000);
     }
-  };
+  }, [data, user]);
 
-  const availableOwners = data ? [
-    ...new Set([
-      ...data.implicit_tasks.map(t => t.owner).filter(o => o && o !== 'Unassigned'),
-      ...data.smart_nudges.map(n => n.recipient),
-      ...data.blockers.map(b => b.owner),
-    ])
-  ] : [];
+  /** Memoized list of unique team members for task reassignment */
+  const availableOwners = useMemo(() => {
+    if (!data) return [];
+    return [
+      ...new Set([
+        ...data.implicit_tasks.map(t => t.owner).filter(o => o && o !== 'Unassigned'),
+        ...data.smart_nudges.map(n => n.recipient),
+        ...data.blockers.map(b => b.owner),
+      ])
+    ];
+  }, [data]);
 
-  const handleTaskUpdate = (index: number, updates: Partial<Task>) => {
+  const handleTaskUpdate = useCallback((index: number, updates: Partial<Task>) => {
     if (!data) return;
     const newTasks = [...data.implicit_tasks];
     newTasks[index] = { ...newTasks[index], ...updates };
     setData({ ...data, implicit_tasks: newTasks });
-  };
+  }, [data]);
 
-  const handleAnalyze = async (inputs: { meeting: string; chat: string; email: string }, sentimentContext?: any) => {
+  const handleAnalyze = useCallback(async (
+    inputs: { meeting: string; chat: string; email: string },
+    sentimentContext?: SentimentContext
+  ) => {
     setIsLoading(true);
     setError(null);
     setData(null);
@@ -207,14 +227,15 @@ export default function Home() {
         setData(result);
         saveAnalysis(result);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [saveAnalysis]);
 
-  const handleHistorySelect = async (id: string) => {
+  const handleHistorySelect = useCallback(async (id: string) => {
     if (!user || !db) return;
     try {
       const { doc, getDoc } = await import('firebase/firestore');
@@ -227,28 +248,41 @@ export default function Home() {
     } catch {
       console.error('Failed to load history entry');
     }
-  };
+  }, [user]);
+
+  const toggleHistory = useCallback(() => setHistoryOpen(prev => !prev), []);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-emerald-200 selection:text-emerald-900">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:bg-emerald-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg">
+        Skip to main content
+      </a>
       <Header />
-      <main className="max-w-6xl mx-auto p-6 space-y-8 pb-20">
-        <section>
+      <main id="main-content" className="max-w-6xl mx-auto p-6 space-y-8 pb-20">
+        <section aria-label="Communication inputs">
           <WorkspaceInput onAnalyze={handleAnalyze} isLoading={isLoading} />
           {error && (
-            <div className="mt-4 p-4 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+            <div role="alert" className="mt-4 p-4 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
               {error}
             </div>
           )}
         </section>
 
+        {/* Live region for screen readers */}
+        <div aria-live="polite" aria-atomic="true" className="sr-only">
+          {isLoading && 'AI agents are analyzing your communication data...'}
+          {data && !isLoading && 'Analysis complete. Results are displayed below.'}
+        </div>
+
         {history.length > 0 && (
-          <AnalysisHistory
-            entries={history}
-            onSelect={handleHistorySelect}
-            isOpen={historyOpen}
-            onToggle={() => setHistoryOpen(!historyOpen)}
-          />
+          <Suspense fallback={<CardSkeleton />}>
+            <AnalysisHistory
+              entries={history}
+              onSelect={handleHistorySelect}
+              isOpen={historyOpen}
+              onToggle={toggleHistory}
+            />
+          </Suspense>
         )}
 
         {(isLoading || data) && (
@@ -257,16 +291,17 @@ export default function Home() {
               <div className="flex justify-end">
                 <button
                   onClick={handleShare}
+                  aria-label={shareCopied ? 'Link copied to clipboard' : 'Share analysis results'}
                   className="flex items-center space-x-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-colors"
                 >
                   {shareCopied ? (
                     <>
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <Check className="w-4 h-4 text-emerald-500" aria-hidden="true" />
                       <span className="text-emerald-600">{shareUrl ? 'Link Copied!' : 'JSON Copied!'}</span>
                     </>
                   ) : (
                     <>
-                      <Share2 className="w-4 h-4" />
+                      <Share2 className="w-4 h-4" aria-hidden="true" />
                       <span>Share Analysis</span>
                     </>
                   )}
@@ -274,7 +309,7 @@ export default function Home() {
               </div>
             )}
 
-            <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <section className="grid grid-cols-1 lg:grid-cols-3 gap-8" aria-label="Analysis results">
               <div className="lg:col-span-1 space-y-8">
                 <AgentTimeline
                   events={data?.agent_timeline}
@@ -285,7 +320,7 @@ export default function Home() {
               
               <div className="lg:col-span-2 space-y-8">
                 {data && (
-                  <>
+                  <Suspense fallback={<CardSkeleton />}>
                     <TeamPulseCard
                       score={data.team_health_score}
                       risk={data.risk_level}
@@ -310,12 +345,12 @@ export default function Home() {
                       riskLevel={data.risk_level}
                       pulseSummary={data.pulse_summary}
                     />
-                  </>
+                  </Suspense>
                 )}
                 {isLoading && !data && (
-                  <div className="h-full min-h-[400px] flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
+                  <div className="h-full min-h-[400px] flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50" role="status" aria-label="Loading analysis results">
                     <div className="text-center text-slate-400 flex flex-col items-center">
-                      <div className="w-8 h-8 border-4 border-slate-300 border-t-emerald-500 rounded-full animate-spin mb-4"></div>
+                      <div className="w-8 h-8 border-4 border-slate-300 border-t-emerald-500 rounded-full animate-spin mb-4" aria-hidden="true"></div>
                       <p className="animate-pulse">AI Agents are analyzing communication context...</p>
                     </div>
                   </div>

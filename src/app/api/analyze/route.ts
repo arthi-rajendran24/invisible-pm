@@ -2,37 +2,53 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { generatePrompt, generateSystemInstruction } from '@/utils/geminiPrompt';
 import { fallbackMockData } from '@/utils/fallbackMockData';
 import { parseGeminiResponse } from '@/utils/parseResponse';
-import { validateInput } from '@/utils/validation';
+import { AnalyzeRequestSchema } from '@/utils/validation';
+import { checkRateLimit } from '@/utils/rateLimit';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(req: Request) {
   try {
+    // Security: Validate Content-Type header
+    const reqContentType = req.headers.get('content-type');
+    if (!reqContentType || !reqContentType.includes('application/json')) {
+      return new Response(JSON.stringify({ error: 'Content-Type must be application/json.' }), {
+        status: 415,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Security: Rate limit by client IP
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous';
+    const { allowed, resetInMs } = checkRateLimit(clientIp, { maxRequests: 10, windowMs: 60_000 });
+    if (!allowed) {
+      return new Response(
+        JSON.stringify({ error: `Rate limit exceeded. Try again in ${Math.ceil(resetInMs / 1000)}s.` }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': String(Math.ceil(resetInMs / 1000)),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
+
     const body = await req.json();
-    const { meeting, chat, email, sentimentContext } = body;
 
-    // Validate inputs
-    const inputs = [meeting, chat, email];
-    const hasInput = inputs.some(input => typeof input === 'string' && input.trim() !== '');
-
-    if (!hasInput) {
-      return new Response(JSON.stringify({ error: 'Please provide at least one input.' }), {
+    // Validate inputs with Zod schema (single source of truth for validation)
+    const parseResult = AnalyzeRequestSchema.safeParse(body);
+    if (!parseResult.success) {
+      const firstError = parseResult.error.issues[0]?.message || 'Invalid input.';
+      return new Response(JSON.stringify({ error: firstError }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    for (const input of inputs) {
-      if (input && typeof input === 'string' && input.trim() !== '') {
-        const { isValid, error } = validateInput(input);
-        if (!isValid) {
-          return new Response(JSON.stringify({ error }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-      }
-    }
+    const { meeting, chat, email } = parseResult.data;
+    const { sentimentContext } = body;
 
     if (!process.env.GEMINI_API_KEY) {
       console.warn("No GEMINI_API_KEY found, returning fallback mock data via SSE.");

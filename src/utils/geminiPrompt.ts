@@ -1,4 +1,4 @@
-interface SentimentContext {
+export interface SentimentContext {
   meeting?: { score: number; label: string };
   chat?: { score: number; label: string };
   email?: { score: number; label: string };
