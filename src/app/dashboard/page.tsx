@@ -9,6 +9,8 @@ import { Share2, Check } from 'lucide-react';
 import { auth, db, isConfigured } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
 // Lazy-loaded heavy components for code splitting
 const TeamPulseCard = lazy(() => import('@/components/TeamPulseCard'));
 const TaskBoard = lazy(() => import('@/components/TaskBoard'));
@@ -48,20 +50,6 @@ export default function Home() {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
 
-  // Listen to auth state
-  useEffect(() => {
-    if (!isConfigured || !auth) return;
-    try {
-      const unsubscribe = onAuthStateChanged(auth, (u) => {
-        setUser(u);
-        if (u) loadHistory(u.uid);
-      });
-      return () => unsubscribe();
-    } catch {
-      // Firebase not configured
-    }
-  }, []);
-
   const loadHistory = useCallback(async (userId: string) => {
     if (!db) return;
     try {
@@ -97,6 +85,20 @@ export default function Home() {
     }
   }, []);
 
+  // Listen to auth state
+  useEffect(() => {
+    if (!isConfigured || !auth) return;
+    try {
+      const unsubscribe = onAuthStateChanged(auth, (u) => {
+        setUser(u);
+        if (u) loadHistory(u.uid);
+      });
+      return () => unsubscribe();
+    } catch {
+      // Firebase not configured
+    }
+  }, [loadHistory]);
+
   const saveAnalysis = useCallback(async (result: AnalysisResult) => {
     if (!user || !db) return;
     try {
@@ -116,11 +118,12 @@ export default function Home() {
     try {
       if (db) {
         const { doc, setDoc } = await import('firebase/firestore');
-        const shareId = `share_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const shareId = `share_${Date.now()}_${crypto.randomUUID()}`;
         await setDoc(doc(db, 'shared_analyses', shareId), {
           ...data,
           sharedAt: new Date().toISOString(),
           sharedBy: user?.displayName || 'Anonymous',
+          expiresAt: new Date(Date.now() + SEVEN_DAYS_MS).toISOString(),
         });
         const url = `${window.location.origin}/analysis/${shareId}`;
         setShareUrl(url);
