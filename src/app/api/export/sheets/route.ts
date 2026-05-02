@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { google } from 'googleapis';
 
 interface Task {
   task: string;
@@ -11,6 +12,17 @@ interface Task {
   confidence?: number;
 }
 
+// Top-level auth client — created once, not on every request (Fix #3)
+function getAuthClient() {
+  const serviceAccountEmail = process.env.GOOGLE_DOCS_CLIENT_EMAIL;
+  const privateKey = process.env.GOOGLE_DOCS_PRIVATE_KEY;
+  if (!serviceAccountEmail || !privateKey) return null;
+  return new google.auth.GoogleAuth({
+    credentials: { client_email: serviceAccountEmail, private_key: privateKey.replace(/\\n/g, '\n') },
+    scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'],
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const body: { title: string; tasks: Task[] } = await req.json();
@@ -20,10 +32,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No tasks to export' }, { status: 400 });
     }
 
-    const serviceAccountEmail = process.env.GOOGLE_DOCS_CLIENT_EMAIL;
-    const privateKey = process.env.GOOGLE_DOCS_PRIVATE_KEY;
+    const authClient = getAuthClient();
 
-    if (!serviceAccountEmail || !privateKey) {
+    if (!authClient) {
       return NextResponse.json({
         success: true,
         sheetUrl: '#demo-export',
@@ -32,14 +43,8 @@ export async function POST(req: Request) {
       });
     }
 
-    const { google } = await import('googleapis');
-    const auth = new google.auth.GoogleAuth({
-      credentials: { client_email: serviceAccountEmail, private_key: privateKey.replace(/\\n/g, '\n') },
-      scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'],
-    });
-
-    const sheets = google.sheets({ version: 'v4', auth });
-    const drive = google.drive({ version: 'v3', auth });
+    const sheets = google.sheets({ version: 'v4', auth: authClient });
+    const drive = google.drive({ version: 'v3', auth: authClient });
     const sheetTitle = title || `Invisible PM Tasks — ${new Date().toLocaleDateString()}`;
 
     const createRes = await sheets.spreadsheets.create({
@@ -84,8 +89,9 @@ export async function POST(req: Request) {
       sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
       demo: false,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to export';
     console.error('Sheets export error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to export' }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Play, Upload, Mail, MessageSquare, Mic } from 'lucide-react';
 import SentimentIndicator from './SentimentIndicator';
 import { SentimentContext } from '@/utils/geminiPrompt';
@@ -21,13 +21,21 @@ export default function WorkspaceInput({ onAnalyze, isLoading }: Props) {
   const [inputs, setInputs] = useState({
     meeting: 'Friday launch is still on. Arthi said the landing page copy is done but waiting for design approval. Rahul mentioned Firebase login is still broken, so QA has not started. Meena said the email campaign is ready but needs final review. Sales needs the demo script by tomorrow morning. Nobody confirmed who owns the product walkthrough. Priya sounded worried that testing is getting pushed too late.',
     chat: 'Rahul: I am still stuck on auth.\nMeena: Email copy is ready, but I need someone to review it.\nArthi: Landing page is done from my side, waiting on design.\nPriya: Can someone confirm who is owning QA?\nSales: We need the demo script by tomorrow.',
-    email: 'Hi team, quick update before tomorrow\'s sync. The launch plan is mostly on track, but QA is delayed because login is not fixed yet. Design approval is pending for the landing page. Email campaign is ready for review. We still need an owner for the final product walkthrough.'
+    email: "Hi team, quick update before tomorrow's sync. The launch plan is mostly on track, but QA is delayed because login is not fixed yet. Design approval is pending for the landing page. Email campaign is ready for review. We still need an owner for the final product walkthrough."
   });
   const [sentiments, setSentiments] = useState<Record<string, SentimentData | null>>({});
   const [sentimentLoading, setSentimentLoading] = useState<Record<string, boolean>>({});
   const [audioUploading, setAudioUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const sentimentTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const sentimentTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Fix #5: Clear all pending sentiment timers on unmount to prevent state updates after unmount
+  useEffect(() => {
+    const timers = sentimentTimers.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
 
   // Debounced sentiment analysis
   const analyzeSentiment = useCallback((text: string, channel: string) => {

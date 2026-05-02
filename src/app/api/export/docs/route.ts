@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { google } from 'googleapis';
 
 interface ExportDocsRequest {
   title: string;
@@ -7,6 +8,17 @@ interface ExportDocsRequest {
   teamHealthScore?: number;
   riskLevel?: string;
   pulseSummary?: string;
+}
+
+// Top-level auth client — created once, not on every request (Fix #3)
+function getAuthClient() {
+  const serviceAccountEmail = process.env.GOOGLE_DOCS_CLIENT_EMAIL;
+  const privateKey = process.env.GOOGLE_DOCS_PRIVATE_KEY;
+  if (!serviceAccountEmail || !privateKey) return null;
+  return new google.auth.GoogleAuth({
+    credentials: { client_email: serviceAccountEmail, private_key: privateKey.replace(/\\n/g, '\n') },
+    scopes: ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive'],
+  });
 }
 
 export async function POST(req: Request) {
@@ -18,10 +30,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No content to export' }, { status: 400 });
     }
 
-    const serviceAccountEmail = process.env.GOOGLE_DOCS_CLIENT_EMAIL;
-    const privateKey = process.env.GOOGLE_DOCS_PRIVATE_KEY;
+    const authClient = getAuthClient();
 
-    if (!serviceAccountEmail || !privateKey) {
+    if (!authClient) {
       return NextResponse.json({
         success: true,
         docUrl: '#demo-export',
@@ -31,19 +42,13 @@ export async function POST(req: Request) {
       });
     }
 
-    const { google } = await import('googleapis');
-    const auth = new google.auth.GoogleAuth({
-      credentials: { client_email: serviceAccountEmail, private_key: privateKey.replace(/\\n/g, '\n') },
-      scopes: ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive'],
-    });
-
-    const docs = google.docs({ version: 'v1', auth });
-    const drive = google.drive({ version: 'v3', auth });
+    const docs = google.docs({ version: 'v1', auth: authClient });
+    const drive = google.drive({ version: 'v3', auth: authClient });
     const docTitle = title || `Invisible PM Brief — ${new Date().toLocaleDateString()}`;
     const createRes = await docs.documents.create({ requestBody: { title: docTitle } });
     const documentId = createRes.data.documentId!;
 
-    const requests: any[] = [];
+    const requests: { insertText: { location: { index: number }; text: string } }[] = [];
     let idx = 1;
     const ins = (text: string) => { requests.push({ insertText: { location: { index: idx }, text } }); idx += text.length; };
 
@@ -57,9 +62,10 @@ export async function POST(req: Request) {
     await drive.permissions.create({ fileId: documentId, requestBody: { role: 'reader', type: 'anyone' } });
 
     return NextResponse.json({ success: true, docUrl: `https://docs.google.com/document/d/${documentId}/edit`, demo: false });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to export';
     console.error('Docs export error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to export' }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

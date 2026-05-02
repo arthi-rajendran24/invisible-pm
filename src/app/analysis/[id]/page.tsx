@@ -10,6 +10,7 @@ import AgentTimeline from '@/components/AgentTimeline';
 import { AnalysisResult } from '@/types/analysis';
 import { useEffect, useState } from 'react';
 import { db, isConfigured } from '@/lib/firebase';
+import { doc, getDoc, type DocumentData } from 'firebase/firestore';
 import { Share2 } from 'lucide-react';
 
 export default function SharedAnalysisPage({ params }: { params: Promise<{ id: string }> }) {
@@ -26,13 +27,16 @@ export default function SharedAnalysisPage({ params }: { params: Promise<{ id: s
 
         if (isConfigured && db) {
           try {
-            const { doc, getDoc } = await import('firebase/firestore');
             const docRef = doc(db, 'shared_analyses', id);
             const docSnap = await getDoc(docRef);
+            // Fix #12: safe field existence check before casting
             if (docSnap.exists()) {
-              setData(docSnap.data() as AnalysisResult);
-              setLoading(false);
-              return;
+              const raw: DocumentData = docSnap.data();
+              if ('team_health_score' in raw && 'implicit_tasks' in raw) {
+                setData(raw as AnalysisResult);
+                setLoading(false);
+                return;
+              }
             }
           } catch {
             // Firestore not available

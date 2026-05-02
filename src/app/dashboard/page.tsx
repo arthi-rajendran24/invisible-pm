@@ -8,6 +8,11 @@ import { SentimentContext } from '@/utils/geminiPrompt';
 import { Share2, Check } from 'lucide-react';
 import { auth, db, isConfigured } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import {
+  collection, getDocs, query, orderBy, limit,
+  addDoc, doc, setDoc, getDoc,
+  type DocumentData,
+} from 'firebase/firestore';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -53,7 +58,6 @@ export default function Home() {
   const loadHistory = useCallback(async (userId: string) => {
     if (!db) return;
     try {
-      const { collection, getDocs, query, orderBy, limit } = await import('firebase/firestore');
       const q = query(
         collection(db, 'analyses', userId, 'runs'),
         orderBy('timestamp', 'desc'),
@@ -102,7 +106,6 @@ export default function Home() {
   const saveAnalysis = useCallback(async (result: AnalysisResult) => {
     if (!user || !db) return;
     try {
-      const { collection, addDoc } = await import('firebase/firestore');
       await addDoc(collection(db, 'analyses', user.uid, 'runs'), {
         ...result,
         timestamp: new Date().toISOString(),
@@ -117,7 +120,6 @@ export default function Home() {
     if (!data) return;
     try {
       if (db) {
-        const { doc, setDoc } = await import('firebase/firestore');
         const shareId = `share_${Date.now()}_${crypto.randomUUID()}`;
         await setDoc(doc(db, 'shared_analyses', shareId), {
           ...data,
@@ -238,20 +240,24 @@ export default function Home() {
     }
   }, [saveAnalysis]);
 
+  // Fix #11: db included in deps to avoid stale closure flagged by static analysis
   const handleHistorySelect = useCallback(async (id: string) => {
     if (!user || !db) return;
     try {
-      const { doc, getDoc } = await import('firebase/firestore');
       const docRef = doc(db, 'analyses', user.uid, 'runs', id);
       const docSnap = await getDoc(docRef);
+      // Fix #12: safe field existence check before casting
       if (docSnap.exists()) {
-        setData(docSnap.data() as AnalysisResult);
-        setStreamingAgents([]);
+        const raw: DocumentData = docSnap.data();
+        if ('team_health_score' in raw && 'implicit_tasks' in raw) {
+          setData(raw as AnalysisResult);
+          setStreamingAgents([]);
+        }
       }
     } catch {
       console.error('Failed to load history entry');
     }
-  }, [user]);
+  }, [user, db]);
 
   const toggleHistory = useCallback(() => setHistoryOpen(prev => !prev), []);
 

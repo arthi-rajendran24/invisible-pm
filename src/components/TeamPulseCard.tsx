@@ -10,6 +10,9 @@ interface Props {
 }
 
 /** Displays team health score, risk level, and optional trend chart */
+const RADIUS = 36;
+const CIRCUMFERENCE = RADIUS * 2 * Math.PI;
+
 const TeamPulseCard = memo(function TeamPulseCard({ score, risk, summary, healthHistory }: Props) {
   if (score === undefined && !summary) return null;
 
@@ -24,8 +27,8 @@ const TeamPulseCard = memo(function TeamPulseCard({ score, risk, summary, health
       <div className="flex items-center space-x-6">
         <div className="relative">
           <svg className="w-24 h-24 transform -rotate-90" role="img" aria-label={`Team health score: ${score} out of 100`}>
-            <circle cx="48" cy="48" r="36" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
-            <circle cx="48" cy="48" r="36" stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={36 * 2 * Math.PI} strokeDashoffset={36 * 2 * Math.PI - (score / 100) * 36 * 2 * Math.PI} className="text-indigo-500" />
+            <circle cx="48" cy="48" r={RADIUS} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
+            <circle cx="48" cy="48" r={RADIUS} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={CIRCUMFERENCE} strokeDashoffset={CIRCUMFERENCE - (score / 100) * CIRCUMFERENCE} className="text-indigo-500" />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-2xl font-bold text-slate-800">{score}</span>
