@@ -1,4 +1,6 @@
-export function parseGeminiResponse(responseText: string): any | null {
+import { AnalysisResult } from '@/types/analysis';
+
+export function parseGeminiResponse(responseText: string): AnalysisResult | null {
   try {
     const match = responseText.match(/```json\n([\s\S]*?)\n```/) || responseText.match(/```\n([\s\S]*?)\n```/);
     if (match && match[1]) {

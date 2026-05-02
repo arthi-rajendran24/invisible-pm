@@ -1,14 +1,16 @@
 import React from 'react';
 import { HeartPulse, AlertTriangle } from 'lucide-react';
+import HealthTrendChart from './HealthTrendChart';
 
 interface Props {
   score: number;
   risk: string;
   summary: string;
+  healthHistory?: { date: string; score: number }[];
 }
 
-export default function TeamPulseCard({ score, risk, summary }: Props) {
-  if (!score && !summary) return null;
+export default function TeamPulseCard({ score, risk, summary, healthHistory }: Props) {
+  if (score === undefined && !summary) return null;
 
   const riskColor = 
     risk === 'critical' ? 'text-rose-600 bg-rose-100 border-rose-200' :
@@ -37,6 +39,10 @@ export default function TeamPulseCard({ score, risk, summary }: Props) {
             <AlertTriangle className="w-3 h-3 mr-1" />
             Risk: {risk.toUpperCase()}
           </div>
+          {/* Health Trend Chart */}
+          {healthHistory && healthHistory.length >= 2 && (
+            <HealthTrendChart data={healthHistory} />
+          )}
         </div>
       </div>
       <div className="flex-1 md:pl-6 md:border-l md:border-slate-200">
